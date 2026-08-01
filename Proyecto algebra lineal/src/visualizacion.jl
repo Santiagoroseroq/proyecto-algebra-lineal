@@ -1,7 +1,6 @@
 module Visualizacion
 
 using Plots
-using ..Aplicacion
 
 export graficar_rostro, graficar_evolucion, animar_rostro
 
@@ -17,7 +16,7 @@ end
 function graficar_evolucion(historial)
     errores = [h[2] for h in historial]
     kappas = [h[3] for h in historial]
-    pasos = eachindex(historial)   # ✅ CAMBIO AQUÍ
+    pasos = 1:length(historial)
 
     p1 = plot(pasos, errores, yaxis=:log, label="Error ortogonalidad",
               xlabel="Paso", ylabel="Error", title="Error de ortogonalidad", legend=:top)
@@ -26,13 +25,33 @@ function graficar_evolucion(historial)
     return p1, p2
 end
 
-function animar_rostro(historial; fps=5, cada=2)
-    anim = @gif for i in eachindex(historial)   
+# 🔧 CORREGIDO: ejes fijos + líneas que conectan los puntos (para reconocer el rostro)
+function animar_rostro(historial; fps=5, cada=1)
+    # Calculamos límites globales para que la "cámara" no se mueva
+    todos_x = vcat([h[1][1, :] for h in historial]...)
+    todos_y = vcat([h[1][2, :] for h in historial]...)
+    xlims = (minimum(todos_x) - 20, maximum(todos_x) + 20)
+    ylims = (minimum(todos_y) - 20, maximum(todos_y) + 20)
+
+    # La animación se construye explícitamente con un bucle for y savefig
+    # (más control que @gif)
+    anim = @animate for i in 1:cada:length(historial)
         P_act = historial[i][1]
-        scatter(P_act[1, :], P_act[2, :], aspect_ratio=:equal,
-                title="Paso $i", legend=false, xlabel="x", ylabel="y")
-    end every cada
+        x = P_act[1, :]
+        y = P_act[2, :]
+        
+        # Dibujar puntos y conectarlos con líneas (para ver la forma facial)
+        scatter(x, y, aspect_ratio=:equal,
+                title="Paso $i", legend=false, xlabel="x", ylabel="y",
+                xlims=xlims, ylims=ylims,   # ¡ejes fijos!
+                markersize=6, color=:blue)
+        plot!(x, y, color=:blue, linewidth=2, alpha=0.7)
+    end
+
+    # Guardamos el GIF con fps explícito
+    gif(anim, joinpath(@__DIR__, "../output/animacion_temporal.gif"), fps=fps)
+    println("Animación guardada en output/animacion_temporal.gif")
     return anim
 end
 
-end  
+end
