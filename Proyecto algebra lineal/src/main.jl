@@ -5,26 +5,13 @@ using Images, FileIO
 include("transformaciones.jl")
 include("aplicacion.jl")
 include("visualizacion.jl")
-include("experimentos.jl")
+include("Experimentos.jl")
 
-# Usar los módulos (no necesitamos importar funciones específicas)
 using .Transformaciones, .Aplicacion, .Visualizacion, .Experimentos
 
 # ============================================================
-# FUNCIONES AUXILIARES (definidas localmente)
+# FUNCIONES AUXILIARES
 # ============================================================
-function generar_puntos_prueba()
-    t = range(0, 2π, length=12)
-    x_oval = 200 .+ 80 .* cos.(t)
-    y_oval = 200 .+ 100 .* sin.(t)
-    x_ojos = [160, 240]; y_ojos = [180, 180]
-    x_boca = [170, 190, 210, 230]; y_boca = [240, 230, 230, 240]
-    x_nariz = [200]; y_nariz = [210]
-    x = [x_oval; x_ojos; x_boca; x_nariz]
-    y = [y_oval; y_ojos; y_boca; y_nariz]
-    return [x' ; y' ; ones(1, length(x))]
-end
-
 function cargar_imagen_si_existe(ruta)
     if isfile(ruta)
         try
@@ -50,157 +37,194 @@ ruta_csv = joinpath(@__DIR__, "../data/rostro.csv")
 ruta_img = joinpath(@__DIR__, "../data/rostro.jpg")
 
 # ============================================================
-# CAPTURA CON CÁMARA (siempre)
+# CAPTURA CON CÁMARA (obligatoria)
 # ============================================================
 function capturar_con_camara()
     script_path = joinpath(@__DIR__, "capturar_y_detectar.py")
     if !isfile(script_path)
-        println("ERROR: No se encontró capturar_y_detectar.py en src/")
-        return false
+        error("No se encontró capturar_y_detectar.py en src/")
     end
 
-    # Comandos probados para Windows
     comandos = [
-        `cmd /c start /wait py $script_path`,
-        `py $script_path`,
         `python $script_path`,
+        `py $script_path`,
         `C:\Users\VICTUSSS\AppData\Local\Programs\Python\Python313\python.exe $script_path`
     ]
     
     for cmd in comandos
         try
-            println("Intentando: $cmd")
+            println("Ejecutando: $cmd")
             run(cmd)
-            println("Captura finalizada correctamente.")
+            println("Captura finalizada.")
             return isfile(ruta_csv)
         catch
             continue
         end
     end
 
-    # Fallback manual
-    println(repeat("=", 60))
-    println("No se pudo ejecutar el script automáticamente.")
-    println("Por favor, abre una terminal y ejecuta manualmente:")
-    println("  py src/capturar_y_detectar.py")
-    println("Luego presiona ENTER para continuar...")
-    println(repeat("=", 60))
-    readline()
-    return isfile(ruta_csv)
+    error("No se pudo ejecutar el script Python. Asegúrate de tener Python instalado y la cámara conectada.")
 end
 
-# ============================================================
-# INICIO: Captura con cámara
-# ============================================================
-println(repeat("=", 60))
-println(" Abriendo cámara para capturar tu rostro...")
-println(" (Asegúrate de tener la cámara conectada)")
-println(repeat("=", 60))
+println("="^60)
+println("INICIANDO CAPTURA DE ROSTRO")
+println("="^60)
 
 if !capturar_con_camara()
-    println("No se pudo capturar. Usando puntos sintéticos.")
-    P = generar_puntos_prueba()
-    img = nothing
+    error("No se generó el archivo rostro.csv. Verifica la captura.")
 else
     println("Captura exitosa. Cargando datos...")
     df = DataFrame(CSV.File(ruta_csv))
     P = [df.x' ; df.y' ; ones(1, length(df.x))]
+    println("Puntos cargados: $(size(P,2))")
     img = cargar_imagen_si_existe(ruta_img)
 end
 
-# Fallback final
-if !isdefined(Main, :P)
-    P = generar_puntos_prueba()
-    img = nothing
-end
-
 # ============================================================
-# VISUALIZACIÓN INICIAL (usando Visualizacion.graficar_rostro)
+# VISUALIZACIÓN INICIAL
 # ============================================================
+println("Generando visualización inicial...")
 if img !== nothing
     p_original = plot(img, aspect_ratio=:equal, title="Puntos sobre imagen")
     scatter!(p_original, P[1,:], P[2,:], color=:red, markersize=6, label="Puntos")
     savefig(p_original, joinpath(output_dir, "imagen_original_con_puntos.png"))
     display(p_original)
 else
-    p_original = Visualizacion.graficar_rostro(P; titulo="Rostro sintético")
-    savefig(p_original, joinpath(output_dir, "puntos_sin_fondo.png"))
-    display(p_original)
+    error("No se pudo cargar la imagen. Asegúrate de que rostro.jpg exista en data/")
 end
 
 # ============================================================
-# EXPERIMENTO 1 (usando nombres calificados)
+# EXPERIMENTO 1
 # ============================================================
-println("\nEjecutando Experimento 1: 50 rotaciones de 1°...")
-try
-    hist1 = Experimentos.ejecutar_experimento1(P, n=50, angulo=1.0)
-    println("  hist1 generado, longitud: ", length(hist1))
-    
-    p1_err, p1_cond = Visualizacion.graficar_evolucion(hist1)
-    savefig(p1_err, joinpath(output_dir, "exp1_error.png"))
-    savefig(p1_cond, joinpath(output_dir, "exp1_condicion.png"))
-    
-    P_final1 = hist1[end][1]
-    if img !== nothing
-        p_super1 = plot(img, aspect_ratio=:equal, title="Exp1: Original (verde) vs Final (rojo ★)")
-        scatter!(p_super1, P[1,:], P[2,:], color=:green, markersize=8, marker=:circle, label="Original")
-        scatter!(p_super1, P_final1[1,:], P_final1[2,:], color=:red, markersize=10, marker=:star, label="Transformado")
-        plot!(p_super1, P_final1[1,:], P_final1[2,:], color=:red, linewidth=2, label="")
-    else
-        p_super1 = plot(aspect_ratio=:equal, title="Exp1: Original vs Final")
-        scatter!(p_super1, P[1,:], P[2,:], label="Original", color=:blue)
-        scatter!(p_super1, P_final1[1,:], P_final1[2,:], label="Transformado", color=:red, marker=:star)
-    end
-    savefig(p_super1, joinpath(output_dir, "exp1_superposicion.png"))
-    display(p_super1)
-    
-    anim1 = Visualizacion.animar_rostro(hist1, fps=5, cada=2)
-    gif(anim1, joinpath(output_dir, "exp1_animacion.gif"), fps=5)
-    println("GIF Exp1 guardado en output/exp1_animacion.gif")
-catch e
-    println("Error en Experimento 1: $e")
-    println("Stacktrace:")
-    Base.show_backtrace(stdout, catch_backtrace())
-end
+println("\nEjecutando Experimento 1: 50 rotaciones de 1 grado...")
+hist1 = Experimentos.ejecutar_experimento1(P, n=50, angulo=1.0)
+println("  hist1 generado, longitud: ", length(hist1))
+
+p1_err, p1_cond = Visualizacion.graficar_evolucion(hist1)
+savefig(p1_err, joinpath(output_dir, "exp1_error.png"))
+savefig(p1_cond, joinpath(output_dir, "exp1_condicion.png"))
+
+P_final1 = hist1[end][1]
+p_super1 = plot(img, aspect_ratio=:equal, title="Exp1: Original (verde) vs Final (rojo *)")
+scatter!(p_super1, P[1,:], P[2,:], color=:green, markersize=8, marker=:circle, label="Original")
+scatter!(p_super1, P_final1[1,:], P_final1[2,:], color=:red, markersize=10, marker=:star, label="Transformado")
+plot!(p_super1, P_final1[1,:], P_final1[2,:], color=:red, linewidth=2, label="")
+savefig(p_super1, joinpath(output_dir, "exp1_superposicion.png"))
+display(p_super1)
+
+anim1 = Visualizacion.animar_rostro(hist1, fps=5, cada=2)
+gif(anim1, joinpath(output_dir, "exp1_animacion.gif"), fps=5)
+println("GIF Exp1 guardado en output/exp1_animacion.gif")
 
 # ============================================================
-# EXPERIMENTO 2 (usando nombres calificados)
+# EXPERIMENTO 2
 # ============================================================
-println("\nEjecutando Experimento 2: 30 pasos (rotación + escalado no uniforme)...")
-try
-    hist2 = Experimentos.ejecutar_experimento2(P, n=30, angulo=1.0, sx=1.05, sy=0.95)
-    println("  hist2 generado, longitud: ", length(hist2))
-    
-    p2_err, p2_cond = Visualizacion.graficar_evolucion(hist2)
-    savefig(p2_err, joinpath(output_dir, "exp2_error.png"))
-    savefig(p2_cond, joinpath(output_dir, "exp2_condicion.png"))
-    
-    P_final2 = hist2[end][1]
-    if img !== nothing
-        p_super2 = plot(img, aspect_ratio=:equal, title="Exp2: Original (verde) vs Final (rojo ★)")
-        scatter!(p_super2, P[1,:], P[2,:], color=:green, markersize=8, marker=:circle, label="Original")
-        scatter!(p_super2, P_final2[1,:], P_final2[2,:], color=:red, markersize=10, marker=:star, label="Transformado")
-        plot!(p_super2, P_final2[1,:], P_final2[2,:], color=:red, linewidth=2, label="")
-    else
-        p_super2 = plot(aspect_ratio=:equal, title="Exp2: Original vs Final")
-        scatter!(p_super2, P[1,:], P[2,:], label="Original", color=:blue)
-        scatter!(p_super2, P_final2[1,:], P_final2[2,:], label="Transformado", color=:red, marker=:star)
+println("\nEjecutando Experimento 2: 30 pasos (rotacion + escalado no uniforme)...")
+hist2 = Experimentos.ejecutar_experimento2(P, n=30, angulo=1.0, sx=1.05, sy=0.95)
+println("  hist2 generado, longitud: ", length(hist2))
+
+p2_err, p2_cond = Visualizacion.graficar_evolucion(hist2)
+savefig(p2_err, joinpath(output_dir, "exp2_error.png"))
+savefig(p2_cond, joinpath(output_dir, "exp2_condicion.png"))
+
+P_final2 = hist2[end][1]
+p_super2 = plot(img, aspect_ratio=:equal, title="Exp2: Original (verde) vs Final (rojo *)")
+scatter!(p_super2, P[1,:], P[2,:], color=:green, markersize=8, marker=:circle, label="Original")
+scatter!(p_super2, P_final2[1,:], P_final2[2,:], color=:red, markersize=10, marker=:star, label="Transformado")
+plot!(p_super2, P_final2[1,:], P_final2[2,:], color=:red, linewidth=2, label="")
+savefig(p_super2, joinpath(output_dir, "exp2_superposicion.png"))
+display(p_super2)
+
+anim2 = Visualizacion.animar_rostro(hist2, fps=5, cada=2)
+gif(anim2, joinpath(output_dir, "exp2_animacion.gif"), fps=5)
+println("GIF Exp2 guardado en output/exp2_animacion.gif")
+
+# ============================================================
+# ANALISIS AVANZADO
+# ============================================================
+println("\nGenerando analisis avanzado (area, dashboard, SVD)...")
+
+function area_poligono(P)
+    n = size(P, 2)
+    x = P[1, :]
+    y = P[2, :]
+    s = 0.0
+    for i in 1:n-1
+        s += x[i]*y[i+1] - x[i+1]*y[i]
     end
-    savefig(p_super2, joinpath(output_dir, "exp2_superposicion.png"))
-    display(p_super2)
-    
-    anim2 = Visualizacion.animar_rostro(hist2, fps=5, cada=2)
-    gif(anim2, joinpath(output_dir, "exp2_animacion.gif"), fps=5)
-    println("GIF Exp2 guardado en output/exp2_animacion.gif")
-catch e
-    println("Error en Experimento 2: $e")
-    println("Stacktrace:")
-    Base.show_backtrace(stdout, catch_backtrace())
+    s += x[n]*y[1] - x[1]*y[n]
+    return 0.5 * abs(s)
 end
+
+function calcular_metricas(hist)
+    kappa = [h[3] for h in hist]
+    err = [h[2] for h in hist]
+    areas = [area_poligono(h[1][1:2,:]) for h in hist]
+    area_rel = areas / areas[1]
+    return kappa, err, area_rel
+end
+
+kappa1, err1, area1 = calcular_metricas(hist1)
+kappa2, err2, area2 = calcular_metricas(hist2)
+
+# 🔑 Cambio CLAVE: definimos pasos separados
+pasos1 = 1:length(hist1)   # 50 elementos
+pasos2 = 1:length(hist2)   # 60 elementos
+
+p1 = plot(pasos1, kappa1, yaxis=:log, label="Exp1 (Rot)", lw=2, color=:blue)
+plot!(p1, pasos2, kappa2, yaxis=:log, label="Exp2 (Rot+Esc)", lw=2, linestyle=:dash, color=:red)
+title!(p1, "Numero de Condicion")
+
+p2 = plot(pasos1, max.(err1, 1e-16), yaxis=:log, label="Exp1", lw=2, color=:blue)
+plot!(p2, pasos2, max.(err2, 1e-16), yaxis=:log, label="Exp2", lw=2, linestyle=:dash, color=:red)
+title!(p2, "Error de Ortogonalidad")
+
+p3 = plot(pasos1, area1, label="Exp1", lw=2, color=:blue)
+plot!(p3, pasos2, area2, label="Exp2", lw=2, linestyle=:dash, color=:red)
+plot!(p3, [1, max(last(pasos1), last(pasos2))], [1, 1], label="Area ideal", linestyle=:dot, color=:black)
+title!(p3, "Area Relativa")
+
+labels = ["kappa (log10)", "Error (log10)", "Area Rel"]
+val1 = [log10(kappa1[end]), log10(err1[end]), area1[end]]
+val2 = [log10(kappa2[end]), log10(err2[end]), area2[end]]
+p4 = bar(labels, [val1 val2], legend=:none, title="Metricas finales", bar_width=0.6)
+dashboard = plot(p1, p2, p3, p4, layout=(2,2), size=(1000, 800))
+savefig(dashboard, joinpath(output_dir, "dashboard_avanzado.png"))
+display(dashboard)
+
+function dibujar_svd(P_final, T_acum; titulo="SVD - Direcciones de deformacion")
+    A = T_acum[1:2, 1:2]
+    U, S, V = svd(A)
+    escala = 40.0
+    centro = mean(P_final[1:2, :], dims=2)
+    v1 = V[:, 1] * S[1] * escala / 2
+    v2 = V[:, 2] * S[2] * escala * 3
+    p = plot(aspect_ratio=:equal, title=titulo, xlabel="x", ylabel="y")
+    scatter!(p, P_final[1,:], P_final[2,:], color=:blue, label="Rostro final")
+    plot!(p, P_final[1,:], P_final[2,:], color=:blue, alpha=0.5, label="")
+    quiver!(p, [centro[1]], [centro[2]], quiver=([v1[1]], [v1[2]]), color=:red, linewidth=3, label="sigma1 (estiramiento)")
+    quiver!(p, [centro[1]], [centro[2]], quiver=([v2[1]], [v2[2]]), color=:blue, linewidth=3, label="sigma2 (colapso)")
+    return p
+end
+
+T_final2 = hist2[end][4]
+p_svd = dibujar_svd(hist2[end][1], T_final2)
+savefig(p_svd, joinpath(output_dir, "svd_vectores_exp2.png"))
+display(p_svd)
+
+println("\nCOMPARATIVA FINAL:")
+println("=" * 60)
+println("Metrica               | Exp1 (Rot)     | Exp2 (Rot+Esc)")
+println("-" * 60)
+println("kappa final           | $(round(kappa1[end], digits=2))     | $(round(kappa2[end], digits=2))")
+println("Error Ort. final      | $(round(err1[end], sigdigits=3)) | $(round(err2[end], sigdigits=3))")
+println("Area Relativa final   | $(round(area1[end], digits=4))    | $(round(area2[end], digits=4))")
+println("=" * 60)
 
 println("\nTodo listo. Revisa la carpeta 'output'.")
-println("Archivos esperados:")
+println("Archivos generados:")
 println("   - exp1_error.png / exp1_condicion.png")
 println("   - exp1_superposicion.png / exp1_animacion.gif")
 println("   - exp2_error.png / exp2_condicion.png")
 println("   - exp2_superposicion.png / exp2_animacion.gif")
+println("   - dashboard_avanzado.png")
+println("   - svd_vectores_exp2.png")
